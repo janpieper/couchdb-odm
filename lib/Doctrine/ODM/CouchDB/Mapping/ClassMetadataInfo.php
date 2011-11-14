@@ -523,16 +523,14 @@ class ClassMetadataInfo implements ClassMetadata
                 ));
             }
             sort($uniqueConstraint->fields);
-            $conflictingUniqueConstraintIndex = array_search(
+            $conflictingUniqueConstraintName = array_search(
                 $uniqueConstraint->fields,
                 $this->uniqueConstraints
             );
-            if ($conflictingUniqueConstraintIndex !== false) {
-                $uniqueConstraintNames = array_keys($this->uniqueConstraints);
+            if ($conflictingUniqueConstraintName !== false) {
                 throw new \InvalidArgumentException(sprintf(
-                    'Unique constraint "%s" uses the same fields as "%s"',
-                    $uniqueConstraint->name,
-                    $uniqueConstraintNames[$conflictingUniqueConstraintIndex]
+                    'Unique constraint "%s" uses the same fields as "%s".',
+                    $uniqueConstraint->name, $conflictingUniqueConstraintName
                 ));
             }
             $this->uniqueConstraints[$uniqueConstraint->name] = $uniqueConstraint->fields;
