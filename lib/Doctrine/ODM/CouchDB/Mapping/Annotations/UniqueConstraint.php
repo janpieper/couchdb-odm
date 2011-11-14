@@ -24,10 +24,8 @@ use Doctrine\Common\Annotations\Annotation;
 /**
  * @Annotation
  */
-final class Document
+class UniqueConstraint extends Annotation
 {
-    public $type;
-    public $repositoryClass;
-    public $indexed = false;
-    public $uniqueConstraints = array();
+    public $name;
+    public $fields = array();
 }
