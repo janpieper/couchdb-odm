@@ -21,7 +21,8 @@ namespace Doctrine\ODM\CouchDB\Mapping\Driver;
 
 use Doctrine\ODM\CouchDB\Mapping\ClassMetadata,
     Doctrine\Common\Annotations\Reader,
-    Doctrine\ODM\CouchDB\Mapping\MappingException;
+    Doctrine\ODM\CouchDB\Mapping\MappingException,
+    Doctrine\ODM\CouchDB\Mapping\Annotations;
 
 /**
  * The AnnotationDriver reads the mapping metadata from docblock annotations.
@@ -105,19 +106,19 @@ class AnnotationDriver implements Driver
         $classAnnotations = $this->reader->getClassAnnotations($reflClass);
         $isValidDocument = false;
         foreach ($classAnnotations AS $classAnnotation) {
-            if ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Document) {
+            if ($classAnnotation instanceof Annotations\Document) {
                 if ($classAnnotation->indexed) {
                     $class->indexed = true;
                 }
                 $class->setCustomRepositoryClass($classAnnotation->repositoryClass);
                 $isValidDocument = true;
-            } elseif ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\EmbeddedDocument) {
+            } elseif ($classAnnotation instanceof Annotations\EmbeddedDocument) {
                 $class->isEmbeddedDocument = true;
                 $isValidDocument = true;
-            } else if ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\MappedSuperclass) {
+            } else if ($classAnnotation instanceof Annotations\MappedSuperclass) {
                 $class->isMappedSuperclass = true;
                 $isValidDocument = true;
-            } else if ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Index) {
+            } else if ($classAnnotation instanceof Annotations\Index) {
                 $class->indexed = true;
             }
         }
@@ -132,17 +133,17 @@ class AnnotationDriver implements Driver
             $mapping['fieldName'] = $property->getName();
 
             foreach ($this->reader->getPropertyAnnotations($property) as $fieldAnnot) {
-                if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Field) {
-                    if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Version) {
+                if ($fieldAnnot instanceof Annotations\Field) {
+                    if ($fieldAnnot instanceof Annotations\Version) {
                         $mapping['isVersionField'] = true;
                     }
 
                     $mapping = array_merge($mapping, (array) $fieldAnnot);
                     unset($mapping['value']);
                     $isField = true;
-                } else if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Index) {
+                } else if ($fieldAnnot instanceof Annotations\Index) {
                     $mapping['indexed'] = true;
-                } else if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\ReferenceOne) {
+                } else if ($fieldAnnot instanceof Annotations\ReferenceOne) {
                     $cascade = 0;
                     foreach ($fieldAnnot->cascade AS $cascadeMode) {
                         $cascade += constant('Doctrine\ODM\CouchDB\Mapping\ClassMetadata::CASCADE_' . strtoupper($cascadeMode));
@@ -152,7 +153,7 @@ class AnnotationDriver implements Driver
                     $mapping = array_merge($mapping, (array) $fieldAnnot);
                     unset($mapping['value']);
                     $class->mapManyToOne($mapping);
-                } else if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\ReferenceMany) {
+                } else if ($fieldAnnot instanceof Annotations\ReferenceMany) {
                     $cascade = 0;
                     foreach ($fieldAnnot->cascade AS $cascadeMode) {
                         $cascade += constant('Doctrine\ODM\CouchDB\Mapping\ClassMetadata::CASCADE_' . strtoupper($cascadeMode));
@@ -162,9 +163,9 @@ class AnnotationDriver implements Driver
                     $mapping = array_merge($mapping, (array) $fieldAnnot);
                     unset($mapping['value']);
                     $class->mapManyToMany($mapping);
-                } else if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Attachments) {
+                } else if ($fieldAnnot instanceof Annotations\Attachments) {
                     $class->mapAttachments($mapping['fieldName']);
-                } else if ($fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\EmbedOne || $fieldAnnot instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\EmbedMany) {
+                } else if ($fieldAnnot instanceof Annotations\EmbedOne || $fieldAnnot instanceof Annotations\EmbedMany) {
                     $mapping = array_merge($mapping, (array) $fieldAnnot);
                     unset($mapping['value']);
                     $class->mapEmbedded($mapping);
@@ -191,11 +192,11 @@ class AnnotationDriver implements Driver
         $classAnnotations = $this->reader->getClassAnnotations(new \ReflectionClass($className));
 
         foreach ($classAnnotations AS $classAnnotation) {
-            if ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\Document) {
+            if ($classAnnotation instanceof Annotations\Document) {
                 return false;
-            } else if ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\MappedSuperclass) {
+            } else if ($classAnnotation instanceof Annotations\MappedSuperclass) {
                 return false;
-            } else if ($classAnnotation instanceof \Doctrine\ODM\CouchDB\Mapping\Annotations\EmbeddedDocument) {
+            } else if ($classAnnotation instanceof Annotations\EmbeddedDocument) {
                 return false;
             }
         }
