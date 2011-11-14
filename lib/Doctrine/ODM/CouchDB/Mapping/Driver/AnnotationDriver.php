@@ -111,6 +111,9 @@ class AnnotationDriver implements Driver
                     $class->indexed = true;
                 }
                 $class->setCustomRepositoryClass($classAnnotation->repositoryClass);
+                if ($classAnnotation->uniqueConstraints) {
+                    $class->setUniqueConstraints($classAnnotation->uniqueConstraints);
+                }
                 $isValidDocument = true;
             } elseif ($classAnnotation instanceof Annotations\EmbeddedDocument) {
                 $class->isEmbeddedDocument = true;
@@ -175,6 +178,10 @@ class AnnotationDriver implements Driver
             if ($isField) {
                 $class->mapField($mapping);
             }
+        }
+
+        if ($class->uniqueConstraints) {
+            $class->validateUniqueConstraintFields();
         }
     }
 

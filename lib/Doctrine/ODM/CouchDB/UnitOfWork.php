@@ -108,6 +108,16 @@ class UnitOfWork
     /**
      * @var array
      */
+    private $uniqueConstraintInsertions = array();
+
+    /**
+     * @var array
+     */
+    private $uniqueConstraintDeletions = array();
+
+    /**
+     * @var array
+     */
     private $visitedCollections = array();
 
     /**
@@ -384,6 +394,35 @@ class UnitOfWork
             return;
         }
         $visited[$oid] = true;
+
+        $class = $this->dm->getClassMetadata(
+            $docClassName = get_class($document)
+        );
+
+        if ($class->uniqueConstraints) {
+            $couchClient = $this->dm->getCouchDBClient();
+            foreach ($class->uniqueConstraints as $name => $fields) {
+                $data = array();
+                foreach ($fields as $field) {
+                    $reflProp = $class->getReflectionProperty($field);
+                    $data[$field] = $reflProp->getValue($document);
+                }
+                $response = $couchClient->findDocument(
+                    $this->generateUniqueConstraintDocId(
+                        $document, $fields, $data
+                    )
+                );
+                if ($response->status !== 404) {
+                    $doc = $response->body;
+                    if ($doc['reference'] !== $document->getId()) {
+                        throw UniqueConstraintException::duplicateEntry(
+                            $name, $docClassName
+                        );
+                    }
+                    $this->uniqueConstraintDeletions[$doc['_id']] = $doc['_rev'];
+                }
+            }
+        }
 
         $this->scheduledRemovals[$oid] = $document;
         $this->documentState[$oid] = self::STATE_REMOVED;
@@ -779,9 +818,11 @@ class UnitOfWork
         if ($document instanceof Proxy\Proxy && !$document->__isInitialized__) {
             return;
         }
+
         $oid = \spl_object_hash($document);
         $actualData = array();
         $embeddedActualData = array();
+
         // 1. compute the actual values of the current document
         foreach ($class->reflFields AS $fieldName => $reflProperty) {
             $value = $reflProperty->getValue($document);
@@ -832,6 +873,12 @@ class UnitOfWork
             $this->originalData[$oid] = $actualData;
             $this->scheduledUpdates[$oid] = $document;
             $this->originalEmbeddedData[$oid] = $embeddedActualData;
+            // compute unique constraint changes
+            if ($class->uniqueConstraints) {
+                $this->computeUniqueConstraintChanges(
+                    $class, $document, $actualData
+                );
+            }
         } else {
             // document is "fully" MANAGED: it was already fully persisted before
             // and we have a copy of the original data
@@ -888,6 +935,12 @@ class UnitOfWork
                 }
             }
 
+            if ($class->uniqueConstraints) {
+                $this->computeUniqueConstraintChanges(
+                    $class, $document, $actualData
+                );
+            }
+
             if ($changed) {
                 $this->originalData[$oid] = $actualData;
                 $this->scheduledUpdates[$oid] = $document;
@@ -901,6 +954,81 @@ class UnitOfWork
                 $this->computeAssociationChanges($assoc, $this->originalData[$oid][$name]);
             }
         }
+    }
+
+    /**
+     * Compute unique constraint changes.
+     *
+     * @param ClassMetadata $class
+     * @param object $document
+     * @param array $data
+     */
+    private function computeUniqueConstraintChanges(ClassMetadata $class, $document, array $data)
+    {
+        $couchClient = $this->dm->getCouchDBClient();
+        $constraints = $class->uniqueConstraints;
+        $docClassName = get_class($document);
+
+        foreach ($constraints as $name => $fields) {
+            $uniqueConstraintDocId = $this->generateUniqueConstraintDocId(
+                $document, $fields, $this->originalData[
+                    $oid = spl_object_hash($document)
+                ]
+            );
+            if (isset($this->uniqueConstraintInsertions[$uniqueConstraintDocId])) {
+                throw UniqueConstraintException::duplicateEntry(
+                    $name, $docClassName
+                );
+            }
+            $response = $couchClient->findDocument(
+                $uniqueConstraintDocId
+            );
+            if ($response->status !== 404) {
+                $doc = $response->body;
+                if ($doc['reference'] !== $data[$class->identifier]) {
+                    throw UniqueConstraintException::duplicateEntry(
+                        $name, $docClassName
+                    );
+                }
+                foreach ($fields as $field) {
+                    if ($data[$field] !== $this->originalData[$oid][$field]) {
+                        $uniqueConstraintDocId = $this->generateUniqueConstraintDocId(
+                            $document, $fields, $data
+                        );
+                        $this->uniqueConstraintDeletions[$doc['_id']] = $doc['_rev'];
+                        $this->uniqueConstraintInsertions[$uniqueConstraintDocId] = array(
+                            '_id' => $uniqueConstraintDocId,
+                            'reference' => $data[$class->identifier]
+                        );
+                    }
+                }
+            } else {
+                $this->uniqueConstraintInsertions[$uniqueConstraintDocId] = array(
+                    '_id' => $uniqueConstraintDocId,
+                    'reference' => $data[$class->identifier]
+                );
+            }
+        }
+    }
+
+    /**
+     * Generate unique constraint document ID.
+     *
+     * @param object $document
+     * @param array $fields
+     * @param array $data
+     */
+    private function generateUniqueConstraintDocId($document, array $fields, array $data)
+    {
+        $constraintData = array();
+        foreach ($fields as $field) {
+            $constraintData[$field] = $data[$field];
+        }
+        return implode('::', array(
+            'Unique',
+            str_replace('\\', '.', get_class($document)),
+            md5(serialize($constraintData))
+        ));
     }
 
     /**
@@ -996,6 +1124,14 @@ class UnitOfWork
             if ($this->evm->hasListeners(Event::postRemove)) {
                 $this->evm->dispatchEvent(Event::postRemove, new Event\LifecycleEventArgs($document, $this->dm));
             }
+        }
+
+        foreach ($this->uniqueConstraintDeletions as $uniqDocId => $uniqDocRev) {
+            $bulkUpdater->deleteDocument($uniqDocId, $uniqDocRev);
+        }
+
+        foreach ($this->uniqueConstraintInsertions as $uniqDoc) {
+            $bulkUpdater->updateDocument($uniqDoc);
         }
 
         foreach ($this->scheduledUpdates AS $oid => $document) {
@@ -1100,7 +1236,9 @@ class UnitOfWork
 
         $this->scheduledUpdates =
         $this->scheduledRemovals =
-        $this->visitedCollections = array();
+        $this->visitedCollections =
+        $this->uniqueConstraintInsertions =
+        $this->uniqueConstraintDeletions = array();
 
         if (count($updateConflictDocuments)) {
             throw new UpdateConflictException($updateConflictDocuments);

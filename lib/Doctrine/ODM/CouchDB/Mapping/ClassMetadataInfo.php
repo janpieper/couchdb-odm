@@ -12,6 +12,7 @@ use Doctrine\Common\Persistence\Mapping\ClassMetadata;
  * @since       1.0
  * @author      Benjamin Eberlei <kontakt@beberlei.de>
  * @author      Lukas Kahwe Smith <smith@pooteeweet.org>
+ * @author      Jan Pieper <kontakt@jan-pieper.info>
  */
 class ClassMetadataInfo implements ClassMetadata
 {
@@ -161,6 +162,13 @@ class ClassMetadataInfo implements ClassMetadata
      * @var string
      */
     public $attachmentField = null;
+
+    /**
+     * List of unique constraints.
+     *
+     * @var array
+     */
+    public $uniqueConstraints = array();
 
     /**
      * If in an inheritance scenario the attachment field is on a super class, this is its name.
@@ -498,5 +506,52 @@ class ClassMetadataInfo implements ClassMetadata
             throw new \InvalidArgumentException("Association name expected, '" . $assocName ."' is not an association.");
         }
         return $this->associationsMappings[$assocName]['targetDocument'];
+    }
+
+    /**
+     * Set unique constraints.
+     *
+     * @param array $uniqueConstraints
+     */
+    public function setUniqueConstraints(array $uniqueConstraints)
+    {
+        foreach ($uniqueConstraints as $uniqueConstraint) {
+            if (array_key_exists($uniqueConstraint->name, $this->uniqueConstraints)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Unique constraint "%s" already exist.',
+                    $uniqueConstraint->name
+                ));
+            }
+            sort($uniqueConstraint->fields);
+            $conflictingUniqueConstraintIndex = array_search(
+                $uniqueConstraint->fields,
+                $this->uniqueConstraints
+            );
+            if ($conflictingUniqueConstraintIndex !== false) {
+                $uniqueConstraintNames = array_keys($this->uniqueConstraints);
+                throw new \InvalidArgumentException(sprintf(
+                    'Unique constraint "%s" uses the same fields as "%s"',
+                    $uniqueConstraint->name,
+                    $uniqueConstraintNames[$conflictingUniqueConstraintIndex]
+                ));
+            }
+            $this->uniqueConstraints[$uniqueConstraint->name] = $uniqueConstraint->fields;
+        }
+    }
+
+    /**
+     * Validate unique constraint fields.
+     */
+    public function validateUniqueConstraintFields()
+    {
+        $fields = $this->getFieldNames();
+        foreach ($this->uniqueConstraints as $uniqueName => $uniqueFields) {
+            if ($unknownFields = array_diff($uniqueFields, $fields)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Unknown field "%s" for unique constraint "%s".',
+                    $unknownFields[0], $uniqueName
+                ));
+            }
+        }
     }
 }
